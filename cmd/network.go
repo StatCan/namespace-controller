@@ -122,7 +122,7 @@ func generateNetworkPolicies(namespace *corev1.Namespace, apiServerEndpoints *co
 	// Namespace metadata
 	isSystem := false
 	if val, ok := namespace.ObjectMeta.Labels["namespace.statcan.gc.ca/purpose"]; ok {
-		isSystem = val == "system"
+		isSystem = val == "system" || val == "daaas"
 	}
 
 	// Helpers
