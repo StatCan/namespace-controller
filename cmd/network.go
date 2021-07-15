@@ -200,7 +200,8 @@ func generateNetworkPolicies(namespace *corev1.Namespace, apiServerEndpoints *co
 								{
 									NamespaceSelector: &metav1.LabelSelector{
 										MatchLabels: map[string]string{
-											"namespaces.statcan.gc.ca/purpose": "system",
+											"install.operator.istio.io/owner-name": "istio",
+											"namespace.statcan.gc.ca/purpose":      "system",
 										},
 									},
 									PodSelector: &metav1.LabelSelector{
