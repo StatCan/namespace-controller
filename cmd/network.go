@@ -211,7 +211,7 @@ func generateNetworkPolicies(namespace *corev1.Namespace, apiServerEndpoints *co
 		} else if allow {
 			policies = append(policies, &networkingv1.NetworkPolicy{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "default-allow-ingress-controller",
+					Name:      "allow-ingress-controller",
 					Namespace: namespace.Name,
 					OwnerReferences: []metav1.OwnerReference{
 						*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
