@@ -250,7 +250,7 @@ func generateNetworkPolicies(namespace *corev1.Namespace, apiServerEndpoints *co
 
 	policies = append(policies, &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default-allow-core-system",
+			Name:      "allow-core-system",
 			Namespace: namespace.Name,
 			OwnerReferences: []metav1.OwnerReference{
 				*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
@@ -357,40 +357,25 @@ func generateNetworkPolicies(namespace *corev1.Namespace, apiServerEndpoints *co
 
 	// Allow access to kube-apiserver to workloads with the necessary label
 	// However, system namespaces will have this by default.
-	var apiServerPolicy *networkingv1.NetworkPolicy
+	apiServerPolicy := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "allow-kube-apiserver",
+			Namespace: namespace.Name,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
+			},
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+			Egress:      []networkingv1.NetworkPolicyEgressRule{},
+		},
+	}
 
-	if isSystem {
-		apiServerPolicy = &networkingv1.NetworkPolicy{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "allow-kube-apiserver",
-				Namespace: namespace.Name,
-				OwnerReferences: []metav1.OwnerReference{
-					*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
-				},
-			},
-			Spec: networkingv1.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{},
-				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
-				Egress:      []networkingv1.NetworkPolicyEgressRule{},
-			},
-		}
-	} else {
-		apiServerPolicy = &networkingv1.NetworkPolicy{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "optional-allow-kube-apiserver",
-				Namespace: namespace.Name,
-				OwnerReferences: []metav1.OwnerReference{
-					*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
-				},
-			},
-			Spec: networkingv1.NetworkPolicySpec{
-				PodSelector: metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"network.statcan.gc.ca/allow-kube-apiserver": "true",
-					},
-				},
-				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
-				Egress:      []networkingv1.NetworkPolicyEgressRule{},
+	if !isSystem {
+		apiServerPolicy.Spec.PodSelector = metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"network.statcan.gc.ca/allow-kube-apiserver": "true",
 			},
 		}
 	}
