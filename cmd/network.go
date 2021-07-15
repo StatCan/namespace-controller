@@ -119,6 +119,13 @@ var networkCmd = &cobra.Command{
 func generateNetworkPolicies(namespace *corev1.Namespace, apiServerEndpoints *corev1.Endpoints) []*networkingv1.NetworkPolicy {
 	policies := []*networkingv1.NetworkPolicy{}
 
+	// Namespace metadata
+	isSystem := false
+	if val, ok := namespace.ObjectMeta.Labels["namespace.statcan.gc.ca/purpose"]; ok {
+		isSystem = val == "system"
+	}
+
+	// Helpers
 	protocolTCP := corev1.ProtocolTCP
 	protocolUDP := corev1.ProtocolUDP
 
@@ -137,44 +144,63 @@ func generateNetworkPolicies(namespace *corev1.Namespace, apiServerEndpoints *co
 		},
 	})
 
-	// Default allow same namespace
-	if val, ok := namespace.ObjectMeta.Labels["network.statcan.gc.ca/allow-same-ns"]; ok {
-		allow, err := strconv.ParseBool(val)
-		if err != nil {
-			klog.Warningf("invalid boolean value %q for network.statcan.gc.ca/allow-same-ns on namespace %q; ignoring", val, namespace.Name)
-		} else if allow {
-			policies = append(policies, &networkingv1.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "default-allow-same-namespace",
-					Namespace: namespace.Name,
-					OwnerReferences: []metav1.OwnerReference{
-						*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
-					},
-				},
-				Spec: networkingv1.NetworkPolicySpec{
-					PodSelector: metav1.LabelSelector{},
-					PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
-					Ingress: []networkingv1.NetworkPolicyIngressRule{
-						{
-							From: []networkingv1.NetworkPolicyPeer{
-								{
-									PodSelector: &metav1.LabelSelector{},
-								},
-							},
-						},
-					},
-					Egress: []networkingv1.NetworkPolicyEgressRule{
-						{
-							To: []networkingv1.NetworkPolicyPeer{
-								{
-									PodSelector: &metav1.LabelSelector{},
-								},
-							},
-						},
-					},
-				},
-			})
+	// Optionally allow same namespace is a label is set,
+	// but assume this label by default on system namespaces
+	allowSameNamespace := false
+	allowSameNamespaceValue, ok := namespace.ObjectMeta.Labels["network.statcan.gc.ca/allow-same-ns"]
+
+	if isSystem {
+		if !ok {
+			allowSameNamespace = true
+		} else {
+			allow, err := strconv.ParseBool(allowSameNamespaceValue)
+			if err != nil {
+				klog.Warningf("invalid boolean value %q for network.statcan.gc.ca/allow-same-ns on namespace %q; ignoring", allowSameNamespaceValue, namespace.Name)
+			} else {
+				allowSameNamespace = allow
+			}
 		}
+	} else {
+		allow, err := strconv.ParseBool(allowSameNamespaceValue)
+		if err != nil {
+			klog.Warningf("invalid boolean value %q for network.statcan.gc.ca/allow-same-ns on namespace %q; ignoring", allowSameNamespaceValue, namespace.Name)
+		} else {
+			allowSameNamespace = allow
+		}
+	}
+
+	if allowSameNamespace {
+		policies = append(policies, &networkingv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "allow-same-namespace",
+				Namespace: namespace.Name,
+				OwnerReferences: []metav1.OwnerReference{
+					*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
+				},
+			},
+			Spec: networkingv1.NetworkPolicySpec{
+				PodSelector: metav1.LabelSelector{},
+				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
+				Ingress: []networkingv1.NetworkPolicyIngressRule{
+					{
+						From: []networkingv1.NetworkPolicyPeer{
+							{
+								PodSelector: &metav1.LabelSelector{},
+							},
+						},
+					},
+				},
+				Egress: []networkingv1.NetworkPolicyEgressRule{
+					{
+						To: []networkingv1.NetworkPolicyPeer{
+							{
+								PodSelector: &metav1.LabelSelector{},
+							},
+						},
+					},
+				},
+			},
+		})
 	}
 
 	// Default allow ingress controller
@@ -330,23 +356,43 @@ func generateNetworkPolicies(namespace *corev1.Namespace, apiServerEndpoints *co
 	})
 
 	// Allow access to kube-apiserver to workloads with the necessary label
-	apiServerPolicy := &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "optional-allow-kube-apiserver",
-			Namespace: namespace.Name,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
-			},
-		},
-		Spec: networkingv1.NetworkPolicySpec{
-			PodSelector: metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"network.statcan.gc.ca/allow-kube-apiserver": "true",
+	// However, system namespaces will have this by default.
+	var apiServerPolicy *networkingv1.NetworkPolicy
+
+	if isSystem {
+		apiServerPolicy = &networkingv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "allow-kube-apiserver",
+				Namespace: namespace.Name,
+				OwnerReferences: []metav1.OwnerReference{
+					*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
 				},
 			},
-			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
-			Egress:      []networkingv1.NetworkPolicyEgressRule{},
-		},
+			Spec: networkingv1.NetworkPolicySpec{
+				PodSelector: metav1.LabelSelector{},
+				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+				Egress:      []networkingv1.NetworkPolicyEgressRule{},
+			},
+		}
+	} else {
+		apiServerPolicy = &networkingv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "optional-allow-kube-apiserver",
+				Namespace: namespace.Name,
+				OwnerReferences: []metav1.OwnerReference{
+					*metav1.NewControllerRef(namespace, corev1.SchemeGroupVersion.WithKind("Namespace")),
+				},
+			},
+			Spec: networkingv1.NetworkPolicySpec{
+				PodSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"network.statcan.gc.ca/allow-kube-apiserver": "true",
+					},
+				},
+				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+				Egress:      []networkingv1.NetworkPolicyEgressRule{},
+			},
+		}
 	}
 
 	for _, subset := range apiServerEndpoints.Subsets {
