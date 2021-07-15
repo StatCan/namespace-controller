@@ -160,7 +160,7 @@ func generateNetworkPolicies(namespace *corev1.Namespace, apiServerEndpoints *co
 				allowSameNamespace = allow
 			}
 		}
-	} else {
+	} else if ok {
 		allow, err := strconv.ParseBool(allowSameNamespaceValue)
 		if err != nil {
 			klog.Warningf("invalid boolean value %q for network.statcan.gc.ca/allow-same-ns on namespace %q; ignoring", allowSameNamespaceValue, namespace.Name)
