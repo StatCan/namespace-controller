@@ -67,9 +67,9 @@ func NewController(
 	klog.Info("configuring event handlers")
 
 	namespaceInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueNamespace,
+		AddFunc: controller.EnqueueNamespace,
 		UpdateFunc: func(old, new interface{}) {
-			controller.enqueueNamespace(new)
+			controller.EnqueueNamespace(new)
 		},
 	})
 
@@ -189,10 +189,10 @@ func (c *Controller) syncHandler(key string) error {
 	return c.sync(namespace)
 }
 
-// enqueueNamespace takes a Namespace resource and converts it into a namespace/name
+// EnqueueNamespace takes a Namespace resource and converts it into a namespace/name
 // string which is then put onto the work queue. This method should *not* be
 // passed resources of any type other than Namespace.
-func (c *Controller) enqueueNamespace(obj interface{}) {
+func (c *Controller) EnqueueNamespace(obj interface{}) {
 	var key string
 	var err error
 	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
@@ -237,7 +237,7 @@ func (c *Controller) HandleObject(obj interface{}) {
 			return
 		}
 
-		c.enqueueNamespace(namespace)
+		c.EnqueueNamespace(namespace)
 		return
 	}
 }

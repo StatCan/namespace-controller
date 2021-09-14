@@ -17,11 +17,11 @@ import (
 	"k8s.io/klog"
 )
 
-var labelCmd = &cobra.Command{
-	Use:   "label",
-	Short: "Propagate labels from namespace to certain resources.",
-	Long: `Propagate labels from namespace to certain resources.
-* Propagate labels for finance
+var financeCmd = &cobra.Command{
+	Use:   "finance",
+	Short: "Manage namespace financial information",
+	Long: `
+Propagate labels from namespace to certain resources (Pods, PVCs) for finance tracking.
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Setup signals so we can shutdown cleanly
@@ -41,6 +41,10 @@ var labelCmd = &cobra.Command{
 		// Setup informers
 		kubeInformerFactory := kubeinformers.NewSharedInformerFactory(kubeClient, time.Minute*5)
 
+		// Namespaces informer
+		namespaceInformer := kubeInformerFactory.Core().V1().Namespaces()
+		namespaceLister := namespaceInformer.Lister()
+
 		// Pod informers
 		podInformer := kubeInformerFactory.Core().V1().Pods()
 		podLister := podInformer.Lister()
@@ -51,7 +55,7 @@ var labelCmd = &cobra.Command{
 
 		// Setup controller
 		controller := namespaces.NewController(
-			kubeInformerFactory.Core().V1().Namespaces(),
+			namespaceInformer,
 			func(namespace *corev1.Namespace) error {
 				// Skip 'control-plane' namespaces
 				if _, ok := namespace.ObjectMeta.Labels["control-plane"]; ok {
@@ -103,6 +107,67 @@ var labelCmd = &cobra.Command{
 			},
 		)
 
+		// Setup callback handlers when new objects are created
+		podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				pod := obj.(*corev1.Pod)
+
+				namespace, err := namespaceLister.Get(pod.Namespace)
+				if err != nil {
+					klog.Errorf("failed loading namespace: %s for pod %s: %v", pod.Namespace, pod.Name, err)
+					return
+				}
+
+				controller.EnqueueNamespace(namespace)
+			},
+			UpdateFunc: func(new, old interface{}) {
+				newPod := new.(*corev1.Pod)
+				oldPod := old.(*corev1.Pod)
+
+				if newPod.ResourceVersion == oldPod.ResourceVersion {
+					return
+				}
+
+				namespace, err := namespaceLister.Get(newPod.Namespace)
+				if err != nil {
+					klog.Errorf("failed loading namespace: %s for pod %s: %v", newPod.Namespace, newPod.Name, err)
+					return
+				}
+
+				controller.EnqueueNamespace(namespace)
+			},
+		})
+
+		pvcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				pvc := obj.(*corev1.PersistentVolumeClaim)
+
+				namespace, err := namespaceLister.Get(pvc.Namespace)
+				if err != nil {
+					klog.Errorf("failed loading namespace: %s for pvc %s: %v", pvc.Namespace, pvc.Name, err)
+					return
+				}
+
+				controller.EnqueueNamespace(namespace)
+			},
+			UpdateFunc: func(new, old interface{}) {
+				newPVC := new.(*corev1.PersistentVolumeClaim)
+				oldPVC := old.(*corev1.PersistentVolumeClaim)
+
+				if newPVC.ResourceVersion == oldPVC.ResourceVersion {
+					return
+				}
+
+				namespace, err := namespaceLister.Get(newPVC.Namespace)
+				if err != nil {
+					klog.Errorf("failed loading namespace: %s for pvc %s: %v", newPVC.Namespace, newPVC.Name, err)
+					return
+				}
+
+				controller.EnqueueNamespace(namespace)
+			},
+		})
+
 		// Start informers
 		kubeInformerFactory.Start(stopCh)
 
@@ -120,5 +185,5 @@ var labelCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(labelCmd)
+	rootCmd.AddCommand(financeCmd)
 }
