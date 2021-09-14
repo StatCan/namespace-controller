@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package namespaces controller
 package namespaces
 
 import (
@@ -34,7 +35,8 @@ import (
 
 type namespaceSyncCallback func(*corev1.Namespace) error
 
-type NamespacesController struct {
+// Controller struct for informers
+type Controller struct {
 	namespaceLister corev1listers.NamespaceLister
 	namespaceSynced cache.InformerSynced
 
@@ -49,11 +51,12 @@ type NamespacesController struct {
 	workqueue workqueue.RateLimitingInterface
 }
 
-func NewNamespacesController(
+// NewController func for event handlers
+func NewController(
 	namespaceInformer corev1informers.NamespaceInformer,
 	sync namespaceSyncCallback,
-) *NamespacesController {
-	controller := &NamespacesController{
+) *Controller {
+	controller := &Controller{
 		namespaceLister: namespaceInformer.Lister(),
 		namespaceSynced: namespaceInformer.Informer().HasSynced,
 		sync:            sync,
@@ -77,12 +80,12 @@ func NewNamespacesController(
 // as syncing informer caches and starting workers. It will block until stopCh
 // is closed, at which point it will shutdown the workqueue and wait for
 // workers to finish processing their current work items.
-func (c *NamespacesController) Run(threadiness int, stopCh <-chan struct{}) error {
+func (c *Controller) Run(threadiness int, stopCh <-chan struct{}) error {
 	defer utilruntime.HandleCrash()
 	defer c.workqueue.ShutDown()
 
 	// Start the informer factories to begin populating the informer caches
-	klog.Info("starting profiles controller")
+	klog.Info("starting namespace controller")
 
 	// Wait for the caches to be synced before starting workers
 	klog.Info("waiting for informer caches to sync")
@@ -91,7 +94,7 @@ func (c *NamespacesController) Run(threadiness int, stopCh <-chan struct{}) erro
 	}
 
 	klog.Info("starting workers")
-	// Launch two workers to process Profile resources
+	// Launch two workers to process Namespace resources
 	for i := 0; i < threadiness; i++ {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
@@ -106,14 +109,14 @@ func (c *NamespacesController) Run(threadiness int, stopCh <-chan struct{}) erro
 // runWorker is a long-running function that will continually call the
 // processNextWorkItem function in order to read and process a message on the
 // workqueue.
-func (c *NamespacesController) runWorker() {
+func (c *Controller) runWorker() {
 	for c.processNextWorkItem() {
 	}
 }
 
 // processNextWorkItem will read a single work item off the workqueue and
 // attempt to process it, by calling the syncHandler.
-func (c *NamespacesController) processNextWorkItem() bool {
+func (c *Controller) processNextWorkItem() bool {
 	obj, shutdown := c.workqueue.Get()
 
 	if shutdown {
@@ -145,7 +148,7 @@ func (c *NamespacesController) processNextWorkItem() bool {
 			return nil
 		}
 		// Run the syncHandler, passing it the namespace/name string of the
-		// Profile resource to be synced.
+		// Namespace resource to be synced.
 		if err := c.syncHandler(key); err != nil {
 			// Put the item back on the workqueue to handle any transient errors.
 			c.workqueue.AddRateLimited(key)
@@ -167,29 +170,29 @@ func (c *NamespacesController) processNextWorkItem() bool {
 }
 
 // syncHandler compares the actual state with the desired, and attempts to
-// converge the two. It then updates the Status block of the Profile resource
+// converge the two. It then updates the Status block of the Namespace resource
 // with the current status of the resource.
-func (c *NamespacesController) syncHandler(key string) error {
-	// Get the Profile resource with this namespace/name
-	profile, err := c.namespaceLister.Get(key)
+func (c *Controller) syncHandler(key string) error {
+	// Get the Namespace resource with this namespace/name
+	namespace, err := c.namespaceLister.Get(key)
 	if err != nil {
-		// The Profile resource may no longer exist, in which case we stop
+		// The Namespace resource may no longer exist, in which case we stop
 		// processing.
 		if errors.IsNotFound(err) {
-			utilruntime.HandleError(fmt.Errorf("profile '%s' in work queue no longer exists", key))
+			utilruntime.HandleError(fmt.Errorf("namespace '%s' in work queue no longer exists", key))
 			return nil
 		}
 
 		return err
 	}
 
-	return c.sync(profile)
+	return c.sync(namespace)
 }
 
-// enqueueNamespace takes a Profile resource and converts it into a namespace/name
+// enqueueNamespace takes a Namespace resource and converts it into a namespace/name
 // string which is then put onto the work queue. This method should *not* be
-// passed resources of any type other than Profile.
-func (c *NamespacesController) enqueueNamespace(obj interface{}) {
+// passed resources of any type other than Namespace.
+func (c *Controller) enqueueNamespace(obj interface{}) {
 	var key string
 	var err error
 	if key, err = cache.MetaNamespaceKeyFunc(obj); err != nil {
@@ -200,11 +203,11 @@ func (c *NamespacesController) enqueueNamespace(obj interface{}) {
 }
 
 // HandleObject will take any resource implementing metav1.Object and attempt
-// to find the Profile resource that 'owns' it. It does this by looking at the
+// to find the Namespace resource that 'owns' it. It does this by looking at the
 // objects metadata.ownerReferences field for an appropriate OwnerReference.
-// It then enqueues that Profile resource to be processed. If the object does not
+// It then enqueues that Namespace resource to be processed. If the object does not
 // have an appropriate OwnerReference, it will simply be skipped.
-func (c *NamespacesController) HandleObject(obj interface{}) {
+func (c *Controller) HandleObject(obj interface{}) {
 	var object metav1.Object
 	var ok bool
 	if object, ok = obj.(metav1.Object); !ok {
@@ -222,19 +225,19 @@ func (c *NamespacesController) HandleObject(obj interface{}) {
 	}
 	klog.V(4).Infof("Processing object: %s", object.GetName())
 	if ownerRef := metav1.GetControllerOf(object); ownerRef != nil {
-		// If this object is not owned by a Profile, we should not do anything more
+		// If this object is not owned by a Namespace, we should not do anything more
 		// with it.
-		if ownerRef.Kind != "Profile" {
+		if ownerRef.Kind != "Namespace" {
 			return
 		}
 
-		profile, err := c.namespaceLister.Get(ownerRef.Name)
+		namespace, err := c.namespaceLister.Get(ownerRef.Name)
 		if err != nil {
-			klog.V(4).Infof("ignoring orphaned object '%s' of profile '%s'", object.GetSelfLink(), ownerRef.Name)
+			klog.V(4).Infof("ignoring orphaned object '%s' of namespace '%s'", object.GetSelfLink(), ownerRef.Name)
 			return
 		}
 
-		c.enqueueNamespace(profile)
+		c.enqueueNamespace(namespace)
 		return
 	}
 }

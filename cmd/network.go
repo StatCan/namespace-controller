@@ -57,7 +57,7 @@ var networkCmd = &cobra.Command{
 		defaultNsEndpointsLister := defaultNsEndpointsInformer.Lister()
 
 		// Setup controller
-		controller := namespaces.NewNamespacesController(
+		controller := namespaces.NewController(
 			kubeInformerFactory.Core().V1().Namespaces(),
 			func(namespace *corev1.Namespace) error {
 				// Skip 'control-plane' namespaces
@@ -111,7 +111,7 @@ var networkCmd = &cobra.Command{
 
 		// Run the controller
 		if err = controller.Run(2, stopCh); err != nil {
-			klog.Fatal("error running controller: %v", err)
+			klog.Fatalf("error running controller: %v", err)
 		}
 	},
 }

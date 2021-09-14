@@ -1,4 +1,15 @@
+# Dependency directories (remove the comment below to include it)
 vendor
-kubeflow-controller
-.DS_Store
-/.idea/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.txt
+*.out
+
+# Binaries for programs and plugins
+namespace-controller
+
+# env
+.env

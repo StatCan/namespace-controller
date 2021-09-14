@@ -8,7 +8,7 @@ var apiserver string
 var kubeconfig string
 
 var rootCmd = &cobra.Command{
-	Use:   "profiles-controller",
+	Use:   "namespace-controller",
 	Short: "A series of controllers for configuring namespaces",
 	Long:  `A series of controllers for configuring namespaces`,
 }
