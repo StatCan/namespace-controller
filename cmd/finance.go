@@ -74,11 +74,13 @@ Propagate labels from namespace to certain resources (Pods, PVCs) for finance tr
 
 					for _, pod := range namespacePods {
 						existingLabels := pod.Labels
-						existingLabels["finance.statcan.gc.ca/workload-id"] = namespace.ObjectMeta.Labels["workload-id"]
-						pod.SetLabels(existingLabels)
-						_, err = kubeClient.CoreV1().Pods(pod.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{})
-						if err != nil {
-							return err
+						if existingLabels["finance.statcan.gc.ca/workload-id"] != namespace.ObjectMeta.Labels["workload-id"] {
+							existingLabels["finance.statcan.gc.ca/workload-id"] = namespace.ObjectMeta.Labels["workload-id"]
+							pod.SetLabels(existingLabels)
+							_, err = kubeClient.CoreV1().Pods(pod.Namespace).Update(context.Background(), pod, metav1.UpdateOptions{})
+							if err != nil {
+								return err
+							}
 						}
 					}
 				}
@@ -94,11 +96,13 @@ Propagate labels from namespace to certain resources (Pods, PVCs) for finance tr
 
 					for _, pvc := range namespacePvcs {
 						existingLabels := pvc.Labels
-						existingLabels["finance.statcan.gc.ca/workload-id"] = namespace.ObjectMeta.Labels["workload-id"]
-						pvc.SetLabels(existingLabels)
-						_, err = kubeClient.CoreV1().PersistentVolumeClaims(pvc.Namespace).Update(context.Background(), pvc, metav1.UpdateOptions{})
-						if err != nil {
-							return err
+						if existingLabels["finance.statcan.gc.ca/workload-id"] != namespace.ObjectMeta.Labels["workload-id"] {
+							existingLabels["finance.statcan.gc.ca/workload-id"] = namespace.ObjectMeta.Labels["workload-id"]
+							pvc.SetLabels(existingLabels)
+							_, err = kubeClient.CoreV1().PersistentVolumeClaims(pvc.Namespace).Update(context.Background(), pvc, metav1.UpdateOptions{})
+							if err != nil {
+								return err
+							}
 						}
 					}
 				}
