@@ -8,8 +8,10 @@ import (
 	"github.com/StatCan/namespace-controller/pkg/signals"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	meta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 	kubeinformers "k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -112,65 +114,79 @@ Propagate labels from namespace to certain resources (Pods, PVCs) for finance tr
 		)
 
 		// Setup callback handlers when new objects are created
-		podInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		//   Upon an Add or Update event, we will trigger a resync
+		//   of the relevant namespace in order to ensure the labels
+		//   are correctly applied.
+		metaAccessor := meta.NewAccessor()
+		eventHandlers := cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				pod := obj.(*corev1.Pod)
+				new := obj.(runtime.Object)
+				addTypeInformationToObject(new)
 
-				namespace, err := namespaceLister.Get(pod.Namespace)
+				// Queue the namespace for further processing
+				objectName, _ := metaAccessor.Name(new)
+				namespaceName, err := metaAccessor.Namespace(new)
 				if err != nil {
-					klog.Errorf("failed loading namespace: %s for pod %s: %v", pod.Namespace, pod.Name, err)
+					klog.Errorf("failed accessing namespace name for %s/%s: %v", new.GetObjectKind().GroupVersionKind().Kind, objectName, err)
 					return
 				}
 
+				namespace, err := namespaceLister.Get(namespaceName)
+				if err != nil {
+					klog.Errorf("failed loading namespace <%s> for %s/%s: %v", namespaceName, new.GetObjectKind().GroupVersionKind().Kind, objectName, err)
+					return
+				}
+
+				klog.Infof("queuing namespace <%s> for processing due to update to %s/%s", namespace.Name, new.GetObjectKind().GroupVersionKind().Kind, objectName)
 				controller.EnqueueNamespace(namespace)
 			},
-			UpdateFunc: func(new, old interface{}) {
-				newPod := new.(*corev1.Pod)
-				oldPod := old.(*corev1.Pod)
+			UpdateFunc: func(newObj, oldObj interface{}) {
+				new := newObj.(runtime.Object)
+				old := oldObj.(runtime.Object)
+				addTypeInformationToObject(new)
+				addTypeInformationToObject(old)
 
-				if newPod.ResourceVersion == oldPod.ResourceVersion {
-					return
-				}
-
-				namespace, err := namespaceLister.Get(newPod.Namespace)
+				// Load resource versions of the new and old object.
+				// If they are the same, then the objects have not changed
+				// and we don't need to continue processing it. This happens
+				// when the informer is re-synchronized against the API server.
+				newResourceVersion, err := metaAccessor.ResourceVersion(new)
 				if err != nil {
-					klog.Errorf("failed loading namespace: %s for pod %s: %v", newPod.Namespace, newPod.Name, err)
+					klog.Errorf("failed loading resource version: %v", err)
 					return
 				}
 
+				oldResourceVersion, err := metaAccessor.ResourceVersion(old)
+				if err != nil {
+					klog.Errorf("failed loading resource version: %v", err)
+					return
+				}
+
+				if newResourceVersion == oldResourceVersion {
+					return
+				}
+
+				// Queue the namespace for further processing
+				objectName, _ := metaAccessor.Name(new)
+				namespaceName, err := metaAccessor.Namespace(new)
+				if err != nil {
+					klog.Errorf("failed accessing namespace name for %s/%s: %v", new.GetObjectKind().GroupVersionKind().Kind, objectName, err)
+					return
+				}
+
+				namespace, err := namespaceLister.Get(namespaceName)
+				if err != nil {
+					klog.Errorf("failed loading namespace <%s> for %s/%s: %v", namespaceName, new.GetObjectKind().GroupVersionKind().Kind, objectName, err)
+					return
+				}
+
+				klog.Infof("queuing namespace <%s> for processing due to update to %s/%s", namespace.Name, new.GetObjectKind().GroupVersionKind().Kind, objectName)
 				controller.EnqueueNamespace(namespace)
 			},
-		})
+		}
 
-		pvcInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				pvc := obj.(*corev1.PersistentVolumeClaim)
-
-				namespace, err := namespaceLister.Get(pvc.Namespace)
-				if err != nil {
-					klog.Errorf("failed loading namespace: %s for pvc %s: %v", pvc.Namespace, pvc.Name, err)
-					return
-				}
-
-				controller.EnqueueNamespace(namespace)
-			},
-			UpdateFunc: func(new, old interface{}) {
-				newPVC := new.(*corev1.PersistentVolumeClaim)
-				oldPVC := old.(*corev1.PersistentVolumeClaim)
-
-				if newPVC.ResourceVersion == oldPVC.ResourceVersion {
-					return
-				}
-
-				namespace, err := namespaceLister.Get(newPVC.Namespace)
-				if err != nil {
-					klog.Errorf("failed loading namespace: %s for pvc %s: %v", newPVC.Namespace, newPVC.Name, err)
-					return
-				}
-
-				controller.EnqueueNamespace(namespace)
-			},
-		})
+		podInformer.Informer().AddEventHandler(eventHandlers)
+		pvcInformer.Informer().AddEventHandler(eventHandlers)
 
 		// Start informers
 		kubeInformerFactory.Start(stopCh)
